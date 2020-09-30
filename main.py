@@ -14,13 +14,14 @@ from utils.octopus_lib import getUid
 uID5 = getUid(short=5) 
 
 status = 200 # for 20.0 C
+pause = 10
 
 print("OctopusLAB hermostat")
 
 print("---init---")
 tempH = conf.get("tempH")
 tempL = conf.get("tempL")
-print("tempL|tempH:",tempL,tempH)
+print("save:",tempL,tempH)
 # w()
 
 print("---leds---")
@@ -30,7 +31,7 @@ led3.blink(300)
 
 print("---oled---")
 from edushield import oled, oled_show
-oled_show(oled,strB="tempLH " + str(tempL) + " | " + str(tempH),num=status)
+oled_show(oled,strB="saved: " + str(tempL) + " | " + str(tempH),num=status)
 
 
 print("---buttons---")
@@ -141,9 +142,23 @@ def left_button_on_long_press():
 
 # oled_show(oled,strB="tempLH " + str(tempL) + " | " + str(tempH))
 
-print("---main-loop-2--")
+print("---main-loop---")
 while True:
-    print("temp")
-    sleep(10)
+    temp = tt.get_temp(0)
+    print("temp: ", temp)
+    
+    if (temp*10 < status):
+        led3.value(0)
+        led2.value(1)
+        relay.value(1)
+    else:
+        relay.value(0)
+        led2.value(0)
+        led3.value(1)
+
+    sleep(3)
+    oled_show(oled,strT="--Temperature--",strB="set: " + str(status/10),num=int(temp*10))
+    sleep(pause)
+    
     oled.fill(0)
     oled.show()
