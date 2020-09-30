@@ -1,6 +1,5 @@
 # octopusLAB - thermostat19 - v.1
 
-from machine import Pin
 from time import sleep, sleep_ms
 from utils.octopus import w
 
@@ -14,9 +13,9 @@ conf = Config("thermostat")
 from utils.octopus_lib import getUid
 uID5 = getUid(short=5) 
 
-status = 200
+status = 200 # for 20.0 C
 
-print("OctopusLAB Thermostat")
+print("OctopusLAB hermostat")
 
 print("---init---")
 tempH = conf.get("tempH")
@@ -25,29 +24,32 @@ print("tempL|tempH:",tempL,tempH)
 # w()
 
 print("---leds---")
-from leds import led2, led3
+from edushield import led2, led3
 led2.blink(300)
 led3.blink(300)
 
 print("---oled---")
-from oled import oled, oled_show
+from edushield import oled, oled_show
 oled_show(oled,strB="tempLH " + str(tempL) + " | " + str(tempH),num=status)
 
 
 print("---buttons---")
-from components.button import Button
+from edushield import boot_button, right_button, left_button
 
-boot_pin = Pin(0, Pin.IN)
-boot_button = Button(boot_pin, release_value=1)
+print("---relay---")
+from edushield import relay
+led2.value(1)
+relay.value(1)
+sleep(1)
+relay.value(0)
+led2.value(0)
 
-pin34 = Pin(34, Pin.IN)
-pin35 = Pin(35, Pin.IN)
-# pin36 = Pin(36, Pin.IN)
-# pin39 = Pin(39, Pin.IN)
-
-right_button = Button(pin35, release_value=1)
-left_button = Button(pin34, release_value=1)
-
+print("---thermometer---")
+from components.iot import Thermometer
+tt = Thermometer(32)  # DEV1 pin 
+tx = tt.ds.scan()
+print(tt.get_temp(0))
+# tt.get_temp(1)
 
 
 def left_action():
@@ -65,7 +67,6 @@ def right_action():
 
 
 def clear_action():
-    _thread.start_new_thread(tblink, (3,200))
     print("clear_action: ", end = ' ')
     led2.value(0)
     led3.value(0)
@@ -138,9 +139,11 @@ def left_button_on_long_press():
 # print("BLE ESP32 device name: " + devName)
 # oled_show(oled,strB = devName)
 
-oled_show(oled,strB="tempLH " + str(tempL) + " | " + str(tempH))
+# oled_show(oled,strB="tempLH " + str(tempL) + " | " + str(tempH))
 
-print("---main-loop---")
+print("---main-loop-2--")
 while True:
     print("temp")
     sleep(10)
+    oled.fill(0)
+    oled.show()
