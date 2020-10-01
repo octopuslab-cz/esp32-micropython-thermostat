@@ -2,6 +2,11 @@
 
 from time import sleep, sleep_ms
 from utils.octopus import w
+from ntptime import settime
+from machine import RTC
+from utils.octopus_lib import get_hhmm
+from utils.database.influxdb import InfluxDB
+# setlocal?
 
 # import blesync_server
 # import blesync_uart.server
@@ -14,6 +19,7 @@ from utils.octopus_lib import getUid
 uID5 = getUid(short=5) 
 
 status = 200 # for 20.0 C
+statusRelay = 0
 pause = 10
 
 print("OctopusLAB hermostat")
@@ -52,6 +58,29 @@ tx = tt.ds.scan()
 print(tt.get_temp(0))
 # tt.get_temp(1)
 
+print("---wifi-influx---")
+def influx_write():
+    temp = tt.get_temp()
+    print(influx.write(relay=statusRelay,tempset=status/10,temperature=temp))
+
+w()
+influx = InfluxDB.fromconfig()
+print("imflux write test")
+influx_write()
+
+
+print("---set-time---")
+rtc = RTC()
+try:
+    settime()
+except:
+    print("err.settime()")
+print(get_hhmm(rtc))
+
+# + 2 h.
+# #setlocal(2)
+# #print(get_hhmm(rtc))
+
 
 def left_action():
     global status
@@ -75,7 +104,6 @@ def clear_action():
     sleep(1)
     oled.show()
     print("DONE")
-
 
 def save_action():
     _thread.start_new_thread(tblink, ())
@@ -151,14 +179,19 @@ while True:
         led3.value(0)
         led2.value(1)
         relay.value(1)
+        statusRelay = 10
     else:
         relay.value(0)
         led2.value(0)
         led3.value(1)
-
+        statusRelay = 0
+        
+        
+    timehm = get_hhmm(rtc)
+    oled_show(oled,strT="--Temperature--",strB="set: " + str(status/10) + " " + timehm,num=int(temp*10))
     sleep(3)
-    oled_show(oled,strT="--Temperature--",strB="set: " + str(status/10),num=int(temp*10))
-    sleep(pause)
-    
     oled.fill(0)
     oled.show()
+    
+    sleep(pause)
+    influx_write()
