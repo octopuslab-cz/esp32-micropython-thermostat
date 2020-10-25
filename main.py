@@ -1,10 +1,11 @@
 # octopusLAB - thermostat19 - v.1
 
 from time import sleep, sleep_ms
-from utils.octopus import w
+# from utils.octopus import w
+# from utils.wifi_connect import WiFiConnect
 from ntptime import settime
 from machine import RTC
-from utils.octopus_lib import get_hhmm,setlocal
+from utils.octopus_lib import w, get_hhmm,setlocal
 from utils.database.influxdb import InfluxDB
 # setlocal?
 
@@ -14,20 +15,38 @@ from utils.database.influxdb import InfluxDB
 
 from config import Config
 conf = Config("thermostat")
+print(gc.mem_free())
 
 from utils.octopus_lib import getUid
 uID5 = getUid(short=5) 
 
 status = 200 # for 20.0 C
-statusRelay = 10 # 10=False, 15 True
-pause = 10
+rOn = 17
+rOff = 15
+statusRelay = rOff # 10=False, 15 True
+pause = 30
+mode = 1
+tempX = status/10
 
-print("OctopusLAB hermostat")
+# mode1: status, mode2 start/stop time
+
+def isTime(debug=True):
+    if(debug):
+        print("Mode: ",mode)
+        print("Time: ",get_hhmm(rtc))
+        print("Start/Stop: ",starT, stopT)
+    hour = rtc.datetime()[4]    
+    return((hour >= starT) and (hour < stopT))
+
+print("OctopusLAB thermostat")
 
 print("---init---")
+print(conf.print_all())
 tempH = conf.get("tempH")
 tempL = conf.get("tempL")
-print("save:",tempL,tempH)
+starT = conf.get("starT")
+stopT = conf.get("stopT")
+timeShift = conf.get("timeShift")
 # w()
 
 print("---leds---")
@@ -38,10 +57,6 @@ led3.blink(300)
 print("---oled---")
 from edushield import oled, oled_show
 oled_show(oled,strB="saved: " + str(tempL) + " | " + str(tempH),num=status)
-
-
-print("---buttons---")
-from edushield import boot_button, right_button, left_button
 
 print("---relay---")
 from edushield import relay
@@ -58,42 +73,77 @@ tx = tt.ds.scan()
 print(tt.get_temp(0))
 # tt.get_temp(1)
 
-print("---wifi-influx---")
+print("---wifi---")
 def influx_write():
+    print(gc.mem_free())
+    gc.collect()
+    print(gc.mem_free())
     temp = tt.get_temp()
-    print(influx.write(relay=statusRelay,tempset=status/10,temperature=temp))
+    return influx.write(relay=statusRelay,tempset=tempX,temperature=temp)
 
-w()
+
+net = w()
+ip = net.sta_if.ifconfig()[0]
+oled_show(oled,strB="IP:" + ip,num=0)
+sleep(2)
+
+print("---button-ftp---")
+from machine import Pin
+
+btnum = 0
+button = Pin(35, Pin.IN)
+print("press right button / CTRL+C or continue")
+sleep(1)
+
+for i in range(12):
+    print("-",end="")
+    btnum += button.value()
+    sleep(0.2)
+
+if (btnum == 0):
+    print("button1 -> start FTP")
+    import ftp 
+
+else:
+    print("button0 -> continue")
+    # ...
+
+
+print("---buttons---")
+from edushield import boot_button, right_button, left_button
+
+print("---wifi-influx---")
 influx = InfluxDB.fromconfig()
-print("imflux write test")
-influx_write()
-
+print("influx write test")
+influxOk = influx_write()
+print("influx write:", influxOk)
+oled_show(oled,strB="influx: " + str(influxOk),num=0)
+sleep(1)
 
 print("---set-time---")
 rtc = RTC()
 try:
     settime()
     print(get_hhmm(rtc))
-    # + 2 h.
-    setlocal(2)
+    # + timeShift  1 / 2 h.
+    setlocal(timeShift )
     print(get_hhmm(rtc))
 except:
     print("err.settime()")
-
 
 
 def left_action():
     global status
     led2.value(1)
     status = status - 5
-    oled_show(oled,num=status)
+    oled_show(oled,strB="M" + str(mode) + " " + timehm,num=status)
 
 
 def right_action():
     global status
     led3.value(1)
     status = status + 5
-    oled_show(oled,num=status)
+    oled_show(oled,strB="M" + str(mode) + " " + timehm,num=status)
 
 
 def clear_action():
@@ -142,7 +192,9 @@ def right_button_on_release():
 @right_button.on_long_press
 def right_button_on_long_press():
     print('right_button_on_long_press')
-    save_action()
+    global mode
+    mode = 2
+    oled_show(oled,strT="--- Mode ---",strB="set: " + str(mode) + " " + timehm,num=int(temp*10))
     led3.blink()
     led3.value(0)
 
@@ -162,7 +214,9 @@ def left_button_on_release():
 @left_button.on_long_press
 def left_button_on_long_press():
     print('left_button_on_long_press')
-    save_action()
+    global mode
+    mode = 1
+    oled_show(oled,strT="--- Mode ---",strB="set: " + str(mode) + " " + timehm,num=int(temp*10))
     led2.blink()
     led2.value(0)
 
@@ -177,23 +231,30 @@ def left_button_on_long_press():
 print("---main-loop---")
 
 while True:
-    temp = tt.get_temp(0)
-    print("temp: ", temp)
+    tempX = status/10 # treshold
+    if mode == 2:
+       if isTime():
+          tempX = tempH
+       else:
+          tempX = tempL
     
-    if (temp*10 < status):
+    temp = tt.get_temp(0)
+    print("temp/tempx: ", temp, tempX)
+    
+    if (temp < tempX):
         led3.value(0)
         led2.value(1)
         relay.value(1)
-        statusRelay = 15
+        statusRelay = rOn
     else:
         relay.value(0)
         led2.value(0)
         led3.value(1)
-        statusRelay = 10
+        statusRelay = rOff
         
         
     timehm = get_hhmm(rtc)
-    oled_show(oled,strT="--Temperature--",strB="set: " + str(status/10) + " " + timehm,num=int(temp*10))
+    oled_show(oled,strT="--Temperature--",strB="set: " + str(tempX) + " " + timehm,num=int(temp*10))
     sleep(3)
     oled.fill(0)
     oled.show()
